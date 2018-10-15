@@ -1,3 +1,3 @@
 import _BottleMachine from "./bottle-machine/BottleMachine";
 
-export const BottleMachine = _BottleMachine;
+export var BottleMachine = _BottleMachine;

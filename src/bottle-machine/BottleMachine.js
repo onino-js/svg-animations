@@ -45,10 +45,12 @@ class FactorySvg extends Component {
   }
 
   render() {
+    const size = this.props.size || 200;
+    const width = size + "px";
     return (
       <svg
         id="svg-container"
-        width="200px"
+        width={width}
         version="1.1"
         viewBox="0 0 7086.6141 4960.6298"
       >

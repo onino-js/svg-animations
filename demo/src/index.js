@@ -9,9 +9,15 @@ class Demo extends Component {
     return (
       <div>
         <h1>svg-animations Demo</h1>
-        <BottleMachine />
-        <AppResponsive />
-        <ThreeGears />
+        <div>
+          <BottleMachine size={600} />
+        </div>
+        <div>
+          <AppResponsive />
+        </div>
+        <div>
+          <ThreeGears />
+        </div>
       </div>
     );
   }

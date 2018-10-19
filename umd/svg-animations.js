@@ -95,7 +95,7 @@ return /******/ (function(modules) { // webpackBootstrap
 /******/
 /******/
 /******/ 	// Load entry module and return exports
-/******/ 	return __webpack_require__(__webpack_require__.s = 2);
+/******/ 	return __webpack_require__(__webpack_require__.s = 3);
 /******/ })
 /************************************************************************/
 /******/ ([
@@ -5712,11 +5712,535 @@ return SVG
 /* 2 */
 /***/ (function(module, exports, __webpack_require__) {
 
-module.exports = __webpack_require__(3);
+/**
+ * Copyright (c) 2013-present, Facebook, Inc.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+if (false) { var throwOnDirectAccess, isValidElement, REACT_ELEMENT_TYPE; } else {
+  // By explicitly using `prop-types` you are opting into new production behavior.
+  // http://fb.me/prop-types-in-prod
+  module.exports = __webpack_require__(5)();
+}
 
 
 /***/ }),
 /* 3 */
+/***/ (function(module, exports, __webpack_require__) {
+
+module.exports = __webpack_require__(7);
+
+
+/***/ }),
+/* 4 */
+/***/ (function(module, exports) {
+
+/*!
+* svg.pathmorphing.js - Enables pathmorphing / path animation in svg.js
+* @version 0.1.3
+*
+*
+* @copyright (c) 2018 Ulrich-Matthias Schäfer
+* @license MIT
+*/;
+;(function() {
+"use strict";
+
+SVG.extend(SVG.PathArray, {
+  morph: function(array) {
+
+    var startArr = this.value
+      ,  destArr = this.parse(array)
+
+    var startOffsetM = 0
+      ,  destOffsetM = 0
+
+    var startOffsetNextM = false
+      ,  destOffsetNextM = false
+
+    while(true){
+      // stop if there is no M anymore
+      if(startOffsetM === false && destOffsetM === false) break
+
+      // find the next M in path array
+      startOffsetNextM = findNextM(startArr, startOffsetM === false ? false : startOffsetM+1)
+       destOffsetNextM = findNextM( destArr,  destOffsetM === false ? false :  destOffsetM+1)
+
+      // We have to add one M to the startArray
+      if(startOffsetM === false){
+        var bbox = new SVG.PathArray(result.start).bbox()
+
+        // when the last block had no bounding box we simply take the first M we got
+        if(bbox.height == 0 || bbox.width == 0){
+          startOffsetM =  startArr.push(startArr[0]) - 1
+        }else{
+          // we take the middle of the bbox instead when we got one
+          startOffsetM = startArr.push( ['M', bbox.x + bbox.width/2, bbox.y + bbox.height/2 ] ) - 1
+        }
+      }
+
+      // We have to add one M to the destArray
+      if( destOffsetM === false){
+        var bbox = new SVG.PathArray(result.dest).bbox()
+
+        if(bbox.height == 0 || bbox.width == 0){
+          destOffsetM =  destArr.push(destArr[0]) - 1
+        }else{
+          destOffsetM =  destArr.push( ['M', bbox.x + bbox.width/2, bbox.y + bbox.height/2 ] ) - 1
+        }
+      }
+
+      // handle block from M to next M
+      var result = handleBlock(startArr, startOffsetM, startOffsetNextM, destArr, destOffsetM, destOffsetNextM)
+
+      // update the arrays to their new values
+      startArr = startArr.slice(0, startOffsetM).concat(result.start, startOffsetNextM === false ? [] : startArr.slice(startOffsetNextM))
+       destArr =  destArr.slice(0,  destOffsetM).concat(result.dest ,  destOffsetNextM === false ? [] :  destArr.slice( destOffsetNextM))
+
+      // update offsets
+      startOffsetM = startOffsetNextM === false ? false : startOffsetM + result.start.length
+       destOffsetM =  destOffsetNextM === false ? false :  destOffsetM + result.dest.length
+
+    }
+
+    // copy back arrays
+    this.value = startArr
+    this.destination = new SVG.PathArray()
+    this.destination.value = destArr
+
+    return this
+  }
+})
+
+
+
+// sorry for the long declaration
+// slices out one block (from M to M) and syncronize it so the types and length match
+function handleBlock(startArr, startOffsetM, startOffsetNextM, destArr, destOffsetM, destOffsetNextM, undefined){
+
+  // slice out the block we need
+  var startArrTemp = startArr.slice(startOffsetM, startOffsetNextM || undefined)
+    ,  destArrTemp =  destArr.slice( destOffsetM,  destOffsetNextM || undefined)
+
+  var i = 0
+    , posStart = {pos:[0,0], start:[0,0]}
+    , posDest  = {pos:[0,0], start:[0,0]}
+
+  do{
+
+    // convert shorthand types to long form
+    startArrTemp[i] = simplyfy.call(posStart, startArrTemp[i])
+     destArrTemp[i] = simplyfy.call(posDest ,  destArrTemp[i])
+
+    // check if both shape types match
+    // 2 elliptical arc curve commands ('A'), are considered different if the
+    // flags (large-arc-flag, sweep-flag) don't match
+    if(startArrTemp[i][0] != destArrTemp[i][0] || startArrTemp[i][0] == 'M' ||
+        (startArrTemp[i][0] == 'A' &&
+          (startArrTemp[i][4] != destArrTemp[i][4] || startArrTemp[i][5] != destArrTemp[i][5])
+        )
+      ) {
+
+      // if not, convert shapes to beziere
+      Array.prototype.splice.apply(startArrTemp, [i, 1].concat(toBeziere.call(posStart, startArrTemp[i])))
+       Array.prototype.splice.apply(destArrTemp, [i, 1].concat(toBeziere.call(posDest, destArrTemp[i])))
+
+    } else {
+
+      // only update positions otherwise
+      startArrTemp[i] = setPosAndReflection.call(posStart, startArrTemp[i])
+       destArrTemp[i] = setPosAndReflection.call(posDest ,  destArrTemp[i])
+
+    }
+
+    // we are at the end at both arrays. stop here
+    if(++i == startArrTemp.length && i == destArrTemp.length) break
+
+    // destArray is longer. Add one element
+    if(i == startArrTemp.length){
+      startArrTemp.push([
+        'C',
+        posStart.pos[0],
+        posStart.pos[1],
+        posStart.pos[0],
+        posStart.pos[1],
+        posStart.pos[0],
+        posStart.pos[1],
+      ])
+    }
+
+    // startArr is longer. Add one element
+    if(i == destArrTemp.length){
+      destArrTemp.push([
+        'C',
+        posDest.pos[0],
+        posDest.pos[1],
+        posDest.pos[0],
+        posDest.pos[1],
+        posDest.pos[0],
+        posDest.pos[1]
+      ])
+    }
+
+
+  }while(true)
+
+  // return the updated block
+  return {start:startArrTemp, dest:destArrTemp}
+}
+
+// converts shorthand types to long form
+function simplyfy(val){
+
+  switch(val[0]){
+    case 'z': // shorthand line to start
+    case 'Z':
+      val[0] = 'L'
+      val[1] = this.start[0]
+      val[2] = this.start[1]
+      break
+    case 'H': // shorthand horizontal line
+      val[0] = 'L'
+      val[2] = this.pos[1]
+      break
+    case 'V': // shorthand vertical line
+      val[0] = 'L'
+      val[2] = val[1]
+      val[1] = this.pos[0]
+      break
+    case 'T': // shorthand quadratic beziere
+      val[0] = 'Q'
+      val[3] = val[1]
+      val[4] = val[2]
+      val[1] = this.reflection[1]
+      val[2] = this.reflection[0]
+      break
+    case 'S': // shorthand cubic beziere
+      val[0] = 'C'
+      val[6] = val[4]
+      val[5] = val[3]
+      val[4] = val[2]
+      val[3] = val[1]
+      val[2] = this.reflection[1]
+      val[1] = this.reflection[0]
+      break
+  }
+
+  return val
+
+}
+
+// updates reflection point and current position
+function setPosAndReflection(val){
+
+  var len = val.length
+
+  this.pos = [ val[len-2], val[len-1] ]
+
+  if('SCQT'.indexOf(val[0]) != -1)
+    this.reflection = [ 2 * this.pos[0] - val[len-4], 2 * this.pos[1] - val[len-3] ]
+
+  return val
+}
+
+// converts all types to cubic beziere
+function toBeziere(val){
+  var retVal = [val]
+
+  switch(val[0]){
+    case 'M': // special handling for M
+      this.pos = this.start = [val[1], val[2]]
+      return retVal
+    case 'L':
+      val[5] = val[3] = val[1]
+      val[6] = val[4] = val[2]
+      val[1] = this.pos[0]
+      val[2] = this.pos[1]
+      break
+    case 'Q':
+      val[6] = val[4]
+      val[5] = val[3]
+      val[4] = val[4] * 1/3 + val[2] * 2/3
+      val[3] = val[3] * 1/3 + val[1] * 2/3
+      val[2] = this.pos[1] * 1/3 + val[2] * 2/3
+      val[1] = this.pos[0] * 1/3 + val[1] * 2/3
+      break
+    case 'A':
+      retVal = arcToBeziere(this.pos, val)
+      val = retVal[0]
+      break
+  }
+
+  val[0] = 'C'
+  this.pos = [val[5], val[6]]
+  this.reflection = [2 * val[5] - val[3], 2 * val[6] - val[4]]
+
+  return retVal
+
+}
+
+// finds the next position of type M
+function findNextM(arr, offset){
+
+  if(offset === false) return false
+
+  for(var i = offset, len = arr.length;i < len;++i){
+
+    if(arr[i][0] == 'M') return i
+
+  }
+
+  return false
+}
+
+
+
+// Convert an arc segment into equivalent cubic Bezier curves
+// Depending on the arc, up to 4 curves might be used to represent it since a
+// curve gives a good approximation for only a quarter of an ellipse
+// The curves are returned as an array of SVG curve commands:
+// [ ['C', x1, y1, x2, y2, x, y] ... ]
+function arcToBeziere(pos, val) {
+    // Parameters extraction, handle out-of-range parameters as specified in the SVG spec
+    // See: https://www.w3.org/TR/SVG11/implnote.html#ArcOutOfRangeParameters
+    var rx = Math.abs(val[1]), ry = Math.abs(val[2]), xAxisRotation = val[3] % 360
+      , largeArcFlag = val[4], sweepFlag = val[5], x = val[6], y = val[7]
+      , A = new SVG.Point(pos), B = new SVG.Point(x, y)
+      , primedCoord, lambda, mat, k, c, cSquare, t, O, OA, OB, tetaStart, tetaEnd
+      , deltaTeta, nbSectors, f, arcSegPoints, angle, sinAngle, cosAngle, pt, i, il
+      , retVal = [], x1, y1, x2, y2
+
+    // Ensure radii are non-zero
+    if(rx === 0 || ry === 0 || (A.x === B.x && A.y === B.y)) {
+      // treat this arc as a straight line segment
+      return [['C', A.x, A.y, B.x, B.y, B.x, B.y]]
+    }
+
+    // Ensure radii are large enough using the algorithm provided in the SVG spec
+    // See: https://www.w3.org/TR/SVG11/implnote.html#ArcCorrectionOutOfRangeRadii
+    primedCoord = new SVG.Point((A.x-B.x)/2, (A.y-B.y)/2).transform(new SVG.Matrix().rotate(xAxisRotation))
+    lambda = (primedCoord.x * primedCoord.x) / (rx * rx) + (primedCoord.y * primedCoord.y) / (ry * ry)
+    if(lambda > 1) {
+      lambda = Math.sqrt(lambda)
+      rx = lambda*rx
+      ry = lambda*ry
+    }
+
+    // To simplify calculations, we make the arc part of a unit circle (rayon is 1) instead of an ellipse
+    mat = new SVG.Matrix().rotate(xAxisRotation).scale(1/rx, 1/ry).rotate(-xAxisRotation)
+    A = A.transform(mat)
+    B = B.transform(mat)
+
+    // Calculate the horizontal and vertical distance between the initial and final point of the arc
+    k = [B.x-A.x, B.y-A.y]
+
+    // Find the length of the chord formed by A and B
+    cSquare = k[0]*k[0] + k[1]*k[1]
+    c = Math.sqrt(cSquare)
+
+    // Calculate the ratios of the horizontal and vertical distance on the length of the chord
+    k[0] /= c
+    k[1] /= c
+
+    // Calculate the distance between the circle center and the chord midpoint
+    // using this formula: t = sqrt(r^2 - c^2 / 4)
+    // where t is the distance between the cirle center and the chord midpoint,
+    //       r is the rayon of the circle and c is the chord length
+    // From: http://www.ajdesigner.com/phpcircle/circle_segment_chord_t.php
+    // Because of the imprecision of floating point numbers, cSquare might end
+    // up being slightly above 4 which would result in a negative radicand
+    // To prevent that, a test is made before computing the square root
+    t = (cSquare < 4) ? Math.sqrt(1 - cSquare/4) : 0
+
+    // For most situations, there are actually two different ellipses that
+    // satisfy the constraints imposed by the points A and B, the radii rx and ry,
+    // and the xAxisRotation
+    // When the flags largeArcFlag and sweepFlag are equal, it means that the
+    // second ellipse is used as a solution
+    // See: https://www.w3.org/TR/SVG/paths.html#PathDataEllipticalArcCommands
+    if(largeArcFlag === sweepFlag) {
+        t *= -1
+    }
+
+    // Calculate the coordinates of the center of the circle from the midpoint of the chord
+    // This is done by multiplying the ratios calculated previously by the distance between
+    // the circle center and the chord midpoint and using these values to go from the midpoint
+    // to the center of the circle
+    // The negative of the vertical distance ratio is used to modify the x coordinate while
+    // the horizontal distance ratio is used to modify the y coordinate
+    // That is because the center of the circle is perpendicular to the chord and perpendicular
+    // lines are negative reciprocals
+    O = new SVG.Point((B.x+A.x)/2 + t*-k[1], (B.y+A.y)/2 + t*k[0])
+    // Move the center of the circle at the origin
+    OA = new SVG.Point(A.x-O.x, A.y-O.y)
+    OB = new SVG.Point(B.x-O.x, B.y-O.y)
+
+    // Calculate the start and end angle
+    tetaStart = Math.acos(OA.x/Math.sqrt(OA.x*OA.x + OA.y*OA.y))
+    if (OA.y < 0) {
+      tetaStart *= -1
+    }
+    tetaEnd = Math.acos(OB.x/Math.sqrt(OB.x*OB.x + OB.y*OB.y))
+    if (OB.y < 0) {
+      tetaEnd *= -1
+    }
+
+    // If sweep-flag is '1', then the arc will be drawn in a "positive-angle" direction,
+    // make sure that the end angle is above the start angle
+    if (sweepFlag && tetaStart > tetaEnd) {
+      tetaEnd += 2*Math.PI
+    }
+    // If sweep-flag is '0', then the arc will be drawn in a "negative-angle" direction,
+    // make sure that the end angle is below the start angle
+    if (!sweepFlag && tetaStart < tetaEnd) {
+      tetaEnd -= 2*Math.PI
+    }
+
+    // Find the number of Bezier curves that are required to represent the arc
+    // A cubic Bezier curve gives a good enough approximation when representing at most a quarter of a circle
+    nbSectors = Math.ceil(Math.abs(tetaStart-tetaEnd) * 2/Math.PI)
+
+    // Calculate the coordinates of the points of all the Bezier curves required to represent the arc
+    // For an in-depth explanation of this part see: http://pomax.github.io/bezierinfo/#circles_cubic
+    arcSegPoints = []
+    angle = tetaStart
+    deltaTeta = (tetaEnd-tetaStart)/nbSectors
+    f = 4*Math.tan(deltaTeta/4)/3
+    for (i = 0; i <= nbSectors; i++) { // The <= is because a Bezier curve have a start and a endpoint
+      cosAngle = Math.cos(angle)
+      sinAngle = Math.sin(angle)
+
+      pt = new SVG.Point(O.x+cosAngle, O.y+sinAngle)
+      arcSegPoints[i] = [new SVG.Point(pt.x+f*sinAngle, pt.y-f*cosAngle), pt, new SVG.Point(pt.x-f*sinAngle, pt.y+f*cosAngle)]
+
+      angle += deltaTeta
+    }
+
+    // Remove the first control point of the first segment point and remove the second control point of the last segment point
+    // These two control points are not used in the approximation of the arc, that is why they are removed
+    arcSegPoints[0][0] = arcSegPoints[0][1].clone()
+    arcSegPoints[arcSegPoints.length-1][2] = arcSegPoints[arcSegPoints.length-1][1].clone()
+
+    // Revert the transformation that was applied to make the arc part of a unit circle instead of an ellipse
+    mat = new SVG.Matrix().rotate(xAxisRotation).scale(rx, ry).rotate(-xAxisRotation)
+    for (i = 0, il = arcSegPoints.length; i < il; i++) {
+      arcSegPoints[i][0] = arcSegPoints[i][0].transform(mat)
+      arcSegPoints[i][1] = arcSegPoints[i][1].transform(mat)
+      arcSegPoints[i][2] = arcSegPoints[i][2].transform(mat)
+    }
+
+
+    // Convert the segments points to SVG curve commands
+    for (i = 1, il = arcSegPoints.length; i < il; i++) {
+      pt = arcSegPoints[i-1][2]
+      x1 = pt.x
+      y1 = pt.y
+
+      pt = arcSegPoints[i][0]
+      x2 = pt.x
+      y2 = pt.y
+
+      pt = arcSegPoints[i][1]
+      x = pt.x
+      y = pt.y
+
+      retVal.push(['C', x1, y1, x2, y2, x, y])
+    }
+
+    return retVal
+}
+}());
+
+
+/***/ }),
+/* 5 */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+/**
+ * Copyright (c) 2013-present, Facebook, Inc.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+
+
+var ReactPropTypesSecret = __webpack_require__(6);
+
+function emptyFunction() {}
+
+module.exports = function() {
+  function shim(props, propName, componentName, location, propFullName, secret) {
+    if (secret === ReactPropTypesSecret) {
+      // It is still safe when called from React.
+      return;
+    }
+    var err = new Error(
+      'Calling PropTypes validators directly is not supported by the `prop-types` package. ' +
+      'Use PropTypes.checkPropTypes() to call them. ' +
+      'Read more at http://fb.me/use-check-prop-types'
+    );
+    err.name = 'Invariant Violation';
+    throw err;
+  };
+  shim.isRequired = shim;
+  function getShim() {
+    return shim;
+  };
+  // Important!
+  // Keep this list in sync with production version in `./factoryWithTypeCheckers.js`.
+  var ReactPropTypes = {
+    array: shim,
+    bool: shim,
+    func: shim,
+    number: shim,
+    object: shim,
+    string: shim,
+    symbol: shim,
+
+    any: shim,
+    arrayOf: getShim,
+    element: shim,
+    instanceOf: getShim,
+    node: shim,
+    objectOf: getShim,
+    oneOf: getShim,
+    oneOfType: getShim,
+    shape: getShim,
+    exact: getShim
+  };
+
+  ReactPropTypes.checkPropTypes = emptyFunction;
+  ReactPropTypes.PropTypes = ReactPropTypes;
+
+  return ReactPropTypes;
+};
+
+
+/***/ }),
+/* 6 */
+/***/ (function(module, exports, __webpack_require__) {
+
+"use strict";
+/**
+ * Copyright (c) 2013-present, Facebook, Inc.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+
+
+
+var ReactPropTypesSecret = 'SECRET_DO_NOT_PASS_THIS_OR_YOU_WILL_BE_FIRED';
+
+module.exports = ReactPropTypesSecret;
+
+
+/***/ }),
+/* 7 */
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -5784,11 +6308,13 @@ var BottleMachine_FactorySvg = function (_Component) {
   };
 
   FactorySvg.prototype.render = function render() {
+    var size = this.props.size || 200;
+    var width = size + "px";
     return external_root_React_commonjs2_react_commonjs_react_amd_react_default.a.createElement(
       "svg",
       {
         id: "svg-container",
-        width: "200px",
+        width: width,
         version: "1.1",
         viewBox: "0 0 7086.6141 4960.6298"
       },
@@ -6242,11 +6768,379 @@ var BottleMachine_FactorySvg = function (_Component) {
 }(external_root_React_commonjs2_react_commonjs_react_amd_react_["Component"]);
 
 /* harmony default export */ var BottleMachine = (BottleMachine_FactorySvg);
+// CONCATENATED MODULE: ./src/app-responsive/AppResponsive.js
+function AppResponsive_classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+function AppResponsive_possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
+
+function AppResponsive_inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
+
+
+
+__webpack_require__(4);
+
+var AppResponsive_Svg = function (_Component) {
+  AppResponsive_inherits(Svg, _Component);
+
+  function Svg(props) {
+    AppResponsive_classCallCheck(this, Svg);
+
+    var _this = AppResponsive_possibleConstructorReturn(this, _Component.call(this, props));
+
+    _this.initializeRects = function (table) {
+      var lng = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 2000;
+
+      table.forEach(function (item) {
+        svg_default.a.get(item.id).attr({
+          "stroke-dasharray": "0," + lng,
+          fill: "#ffffff"
+        });
+      });
+    };
+
+    _this.repeat = function (opts) {
+      var dur = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 2000;
+      var nb = arguments[2];
+
+      if (nb === opts.length) {
+        nb = 0;
+        _this.grow();
+        _this.toMobile();
+        return;
+      }
+      _this.repetition1 = window.setTimeout(function () {
+        _this.draw(opts[nb].id, opts[nb].time1, opts[nb].l1, opts[nb].l2, opts[nb].strokeWidth, opts[nb].color);
+        nb += 1;
+        _this.repeat(opts, dur, nb);
+      }, dur);
+    };
+
+    _this.draw = function (id) {
+      var time = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : 1500;
+      var l1 = arguments.length > 2 && arguments[2] !== undefined ? arguments[2] : 2000;
+      var l2 = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : 2000;
+      var width = arguments.length > 4 && arguments[4] !== undefined ? arguments[4] : 20;
+      var color = arguments.length > 5 && arguments[5] !== undefined ? arguments[5] : "#ff6600";
+
+      var el = svg_default.a.get(id);
+      return el.animate(time).attr({
+        "stroke-dasharray": l1 + ", " + l2,
+        strokeWidth: width
+      }).animate().attr({
+        fill: color,
+        strokeWidth: 0
+      });
+    };
+
+    _this.grow = function () {
+      var rect = svg_default.a.get("Rect1");
+      rect.animate(1000, "-", 0).attr({
+        width: "343.7",
+        height: "225.5"
+      });
+    };
+
+    _this.toMobile = function () {
+      var el = svg_default.a.get("g6521");
+      el.animate(1000, "-", 0).transform({ scaleX: 0.2 });
+    };
+
+    _this.animation1;
+    _this.repetition1 = false;
+    _this.inc = 0;
+    _this.inc2 = 0;
+    _this.rect1;
+    _this.nb1 = 0;
+    _this.nb2 = 0;
+    return _this;
+  }
+
+  Svg.prototype.componentDidMount = function componentDidMount() {
+    var container = svg_default.a.get("svg2");
+    var path = container.path("M150 0 L75 200 L225 200 Z");
+    path.attr({ fill: "#FFF333" });
+    path.animate().plot("m43.69 56.37c17.81-45.27 53.96-0.49 82.31 29.29-124.1 50.24-125.7-55-82.31-29.29");
+
+    var buildRect = function buildRect(id, size, time, color) {
+      return {
+        id: id,
+        time1: time,
+        l1: size,
+        l2: size,
+        strokeWidth: 20,
+        color: color
+      };
+    };
+
+    var opts2 = [buildRect("Rect1", 111.1 * 4, 500, "#ff6600"), buildRect("Rect5", 111.1 * 4, 500, "#003380"), buildRect("Rect3", 111.1 * 4, 500, "#00d455"), buildRect("Rect6", 111.1 * 4, 500, "#ffcc00"), buildRect("Rect2", 111.1 * 4, 500, "#ff0000"), buildRect("Rect4", 111.1 * 4, 500, "#00aa88")];
+
+    this.initializeRects(opts2, 111.1 * 4);
+    var nb = 0;
+    this.repeat(opts2, 1000, nb);
+
+    svg_default.a.get("wheel2").animate(2000).rotate(360).loop();
+    svg_default.a.get("wheel3").animate(2000).rotate(-360).loop();
+    svg_default.a.get("wheel1").animate(4000).rotate(-360).loop();
+
+    svg_default.a.get("app1").attr({
+      "fill-opacity": 0
+    }).animate().delay(2000).attr({
+      "fill-opacity": 1
+    });
+  };
+
+  Svg.prototype.componentWillUnmount = function componentWillUnmount() {
+    window.clearTimeout(this.repetition1);
+    this.repetition1 = false;
+  };
+
+  Svg.prototype.render = function render() {
+    return external_root_React_commonjs2_react_commonjs_react_amd_react_default.a.createElement(
+      "svg",
+      { id: "svg2", width: "600", version: "1.1", viewBox: "0 0 380 290" },
+      external_root_React_commonjs2_react_commonjs_react_amd_react_default.a.createElement(
+        "g",
+        { id: "layer1", transform: "translate(0 -762.4)" },
+        external_root_React_commonjs2_react_commonjs_react_amd_react_default.a.createElement(
+          "g",
+          { id: "g6521" },
+          external_root_React_commonjs2_react_commonjs_react_amd_react_default.a.createElement("rect", {
+            id: "rect6935",
+            ry: "15.9",
+            height: "268.8",
+            width: "361.8",
+            stroke: "#000",
+            y: "772.9",
+            x: "8.231",
+            strokeWidth: "9.875"
+          }),
+          external_root_React_commonjs2_react_commonjs_react_amd_react_default.a.createElement("path", {
+            id: "rect3336-0-3",
+            fill: "#fff",
+            d: "m22.61 778h333c6.2 0 11.2 4.9 11.2 10.9v222.1c0 6-5 11-11.2 11h-333c-6.17 0-11.14-5-11.14-11v-222.1c0-6 4.97-10.9 11.15-10.9"
+          }),
+          external_root_React_commonjs2_react_commonjs_react_amd_react_default.a.createElement("circle", {
+            id: "path3353-1-1-9",
+            cy: "757.2",
+            cx: "390.4",
+            r: "2.247",
+            fill: "#fff"
+          }),
+          external_root_React_commonjs2_react_commonjs_react_amd_react_default.a.createElement("rect", {
+            id: "Rect4",
+            height: "111.1",
+            width: "111.1",
+            stroke: "#3d8d46",
+            y: "902.1",
+            x: "133.9",
+            strokeWidth: ".3143",
+            fill: "#003380"
+          }),
+          external_root_React_commonjs2_react_commonjs_react_amd_react_default.a.createElement("rect", {
+            id: "Rect3",
+            height: "111.1",
+            width: "111.1",
+            stroke: "#3d8d46",
+            y: "785.3",
+            x: "250.1",
+            strokeWidth: ".6285",
+            fill: "#00d455"
+          }),
+          external_root_React_commonjs2_react_commonjs_react_amd_react_default.a.createElement("rect", {
+            id: "Rect5",
+            height: "111.1",
+            width: "111.1",
+            stroke: "#3d8d46",
+            y: "902.1",
+            x: "250.1",
+            strokeWidth: ".3143",
+            fill: "#f60"
+          }),
+          external_root_React_commonjs2_react_commonjs_react_amd_react_default.a.createElement("rect", {
+            id: "Rect6",
+            height: "111.1",
+            width: "111.1",
+            stroke: "#3d8d46",
+            y: "903.1",
+            x: "17.5",
+            strokeWidth: ".3086",
+            fill: "#ff0"
+          }),
+          external_root_React_commonjs2_react_commonjs_react_amd_react_default.a.createElement("rect", {
+            id: "Rect2",
+            height: "111.1",
+            width: "111.1",
+            stroke: "#3d8d46",
+            y: "785.3",
+            x: "133.9",
+            strokeWidth: ".3143",
+            fill: "#c83737"
+          }),
+          external_root_React_commonjs2_react_commonjs_react_amd_react_default.a.createElement("rect", {
+            id: "Rect1",
+            height: "111.1",
+            width: "111.1",
+            stroke: "#3d8d46",
+            y: "785.3",
+            x: "16.5",
+            strokeWidth: ".3143",
+            fill: "#f00"
+          }),
+          external_root_React_commonjs2_react_commonjs_react_amd_react_default.a.createElement(
+            "g",
+            { id: "g6516" },
+            external_root_React_commonjs2_react_commonjs_react_amd_react_default.a.createElement("path", {
+              id: "wheel2",
+              fill: "#f95",
+              d: "m200.6 935.5h5.4c0.3-1.2 1.3-2.1 2.5-2.5v-5.4c-4.2 0.4-7.5 3.7-7.9 7.9m0 1.6c0.4 4.2 3.7 7.6 7.9 8v-5.5c-1.2-0.3-2.2-1.2-2.5-2.5h-5.4m9.5 8c4.2-0.4 7.6-3.8 8-8h-5.5c-0.3 1.3-1.2 2.2-2.5 2.5v5.5m0-12c1.3 0.3 2.2 1.2 2.5 2.4h5.5c-0.4-4.2-3.8-7.5-8-7.9v5.5m-2.3-7l-0.2-1.3 0.1-0.8 1-2.1h1.3l0.9 2.1 0.1 0.8-0.2 1.3s2.3 0.6 2.3 0.6l0.5-1.2 0.5-0.6 1.9-1.4 1.1 0.6-0.2 2.4-0.4 0.7-0.8 1 1.7 1.7 1.1-0.8 0.7-0.3s2.3-0.3 2.3-0.3l0.7 1.2-1.4 1.9-0.7 0.4-1.2 0.5 0.6 2.3s1.3-0.2 1.3-0.2l0.8 0.1s2.2 1 2.2 1v1.3l-2.2 0.9-0.8 0.1s-1.3-0.2-1.3-0.2l-0.6 2.3 1.2 0.5 0.7 0.5 1.4 1.9-0.7 1.1-2.3-0.2-0.7-0.3-1.1-0.9-1.7 1.7 0.8 1.1 0.4 0.7 0.2 2.3-1.1 0.7-1.9-1.4-0.5-0.6-0.5-1.3s-2.3 0.7-2.3 0.7l0.2 1.3-0.1 0.7-0.9 2.2h-1.3l-1-2.2-0.1-0.7 0.2-1.3s-2.3-0.7-2.3-0.7l-0.5 1.3-0.4 0.6-2 1.4-1.1-0.7 0.3-2.3s0.3-0.7 0.3-0.7l0.8-1.1-1.7-1.7-1 0.9-0.7 0.3-2.4 0.2-0.6-1.1 1.4-1.9 0.6-0.5 1.2-0.5-0.6-2.3s-1.3 0.2-1.3 0.2l-0.8-0.1s-2.1-0.9-2.1-0.9v-1.3l2.1-1 0.8-0.1s1.3 0.2 1.3 0.2l0.6-2.3-1.2-0.5-0.6-0.4-1.4-1.9 0.6-1.2 2.4 0.3 0.7 0.3 1 0.8 1.7-1.7-0.8-1s-0.3-0.7-0.3-0.7l-0.3-2.4 1.1-0.6 2 1.4 0.4 0.6 0.5 1.2s2.3-0.6 2.3-0.6"
+            }),
+            external_root_React_commonjs2_react_commonjs_react_amd_react_default.a.createElement("path", {
+              id: "wheel1",
+              fill: "#ff8080",
+              d: "m176.2 931.2v-0.5l0.2-1.3 0.7-1.9h1.4l0.7 1.9 0.2 1.3v0.5l2 0.3 0.1-0.5 0.6-1.3 1.2-1.5 1.2 0.3 0.3 2-0.1 1.3-0.2 0.5s1.9 0.8 1.9 0.8l0.2-0.5s0.9-1 0.9-1l1.6-1.2 1.1 0.6-0.3 2-0.4 1.3s-0.3 0.4-0.3 0.4l1.6 1.2s0.3-0.4 0.3-0.4l1.1-0.8 1.9-0.7 0.9 0.9-0.8 1.9-0.8 1.1-0.4 0.3 1.3 1.6 0.4-0.3 1.3-0.5s1.9-0.2 1.9-0.2l0.7 1.1-1.2 1.6-1.1 0.9-0.4 0.2 0.8 1.8 0.4-0.1s1.4-0.2 1.4-0.2l2 0.3 0.3 1.3-1.6 1.2-1.2 0.6h-0.5l0.2 2.1 0.5-0.1s1.4 0.2 1.4 0.2 1.8 0.8 1.8 0.8v1.3s-1.8 0.8-1.8 0.8-1.4 0.2-1.4 0.2h-0.5l-0.2 2 0.5 0.1 1.2 0.5 1.6 1.2-0.3 1.3-2 0.3s-1.4-0.2-1.4-0.2l-0.4-0.1-0.8 1.8 0.4 0.3 1.1 0.8 1.2 1.6-0.7 1.1s-1.9-0.2-1.9-0.2l-1.3-0.5-0.4-0.3-1.3 1.6 0.4 0.4 0.8 1.1 0.8 1.8-0.9 0.9-1.9-0.7-1.1-0.8s-0.3-0.4-0.3-0.4l-1.6 1.2s0.3 0.4 0.3 0.4l0.4 1.3 0.3 2-1.1 0.7-1.6-1.3s-0.9-1-0.9-1l-0.2-0.5s-1.9 0.8-1.9 0.8l0.2 0.5 0.1 1.3-0.3 2-1.2 0.4-1.2-1.6-0.6-1.3-0.1-0.5-2 0.3v0.5l-0.2 1.3-0.7 1.9h-1.4l-0.7-1.9-0.2-1.3v-0.5l-2-0.3-0.1 0.5-0.6 1.3-1.2 1.6-1.2-0.4-0.3-2 0.1-1.3 0.2-0.5s-1.9-0.8-1.9-0.8l-0.2 0.5s-0.9 1-0.9 1l-1.6 1.3-1.1-0.7 0.3-2 0.4-1.3s0.3-0.4 0.3-0.4l-1.6-1.2s-0.3 0.4-0.3 0.4l-1.1 0.8-1.9 0.7-0.9-0.9 0.8-1.8 0.8-1.1 0.4-0.4-1.3-1.6-0.4 0.3-1.3 0.5-2 0.2-0.6-1.1 1.2-1.6 1.1-0.8 0.4-0.3-0.8-1.8-0.4 0.1s-1.4 0.2-1.4 0.2l-2-0.3-0.3-1.3 1.6-1.2 1.2-0.5 0.5-0.1-0.2-2h-0.6s-1.3-0.2-1.3-0.2-1.8-0.8-1.8-0.8v-1.3s1.8-0.8 1.8-0.8 1.3-0.2 1.3-0.2l0.6 0.1 0.2-2.1h-0.5l-1.2-0.6-1.6-1.2 0.3-1.3 2-0.3s1.4 0.2 1.4 0.2l0.4 0.1 0.8-1.8-0.4-0.2-1.1-0.9-1.2-1.6 0.6-1.1 2 0.2 1.3 0.5 0.4 0.3 1.3-1.6-0.4-0.3-0.8-1.1-0.8-1.9 0.9-0.9 1.9 0.7 1.1 0.8s0.3 0.4 0.3 0.4l1.6-1.2s-0.3-0.4-0.3-0.4l-0.4-1.3-0.3-2 1.1-0.6 1.6 1.2s0.9 1 0.9 1l0.2 0.5s1.9-0.8 1.9-0.8l-0.2-0.5-0.1-1.3 0.3-2 1.2-0.3 1.2 1.5 0.6 1.3 0.1 0.5 2-0.3m-15.8 20.8c0.2 4 1.8 7.9 4.5 10.9l7.7-7.8c-0.7-0.9-1.1-2-1.2-3.1h-11m0-1.7h11c0.1-1.1 0.5-2.2 1.2-3.1l-7.7-7.8c-2.7 3-4.3 6.9-4.5 10.9m5.7-12l7.7 7.7c0.9-0.7 2-1.1 3.2-1.3v-11c-4.1 0.2-7.9 1.8-10.9 4.6m0 25.8c3 2.7 6.8 4.3 10.9 4.5v-11c-1.2-0.1-2.3-0.6-3.2-1.3l-7.7 7.8m12.5 4.5c4.1-0.2 7.9-1.8 10.9-4.5l-7.7-7.8c-0.9 0.7-2 1.2-3.2 1.3v11m0-23.9c1.2 0.2 2.3 0.6 3.2 1.3l7.7-7.7c-3-2.8-6.8-4.4-10.9-4.6v11m4.4 10.4l7.7 7.8c2.7-3 4.3-6.9 4.5-10.9h-11c-0.1 1.1-0.5 2.2-1.2 3.1m0-7.9c0.7 0.9 1.1 2 1.2 3.1h11c-0.2-4-1.8-7.9-4.5-10.9l-7.7 7.8"
+            }),
+            external_root_React_commonjs2_react_commonjs_react_amd_react_default.a.createElement("path", {
+              id: "wheel3",
+              fill: "#ac9393",
+              d: "m183.9 981.8h5.4c0.3-1.2 1.3-2.2 2.5-2.5v-5.5c-4.2 0.4-7.5 3.8-7.9 8m0 1.6c0.4 4.2 3.7 7.5 7.9 7.9v-5.4c-1.2-0.3-2.2-1.3-2.5-2.5h-5.4m9.5 7.9c4.2-0.4 7.6-3.7 8-7.9h-5.5c-0.3 1.2-1.2 2.2-2.5 2.5v5.4m0-12c1.3 0.3 2.2 1.3 2.5 2.5h5.5c-0.4-4.2-3.8-7.6-8-8v5.5m-2.3-6.9l-0.2-1.3 0.1-0.8 1-2.2h1.3l0.9 2.2 0.1 0.8-0.2 1.3s2.3 0.6 2.3 0.6l0.5-1.2 0.5-0.7 1.9-1.4 1.1 0.7-0.2 2.3s-0.3 0.7-0.3 0.7l-0.9 1.1 1.7 1.7 1.1-0.8 0.7-0.4 2.3-0.2 0.7 1.1-1.4 1.9-0.6 0.5-1.3 0.5 0.6 2.3s1.4-0.2 1.4-0.2l0.7 0.1 2.2 0.9v1.3s-2.2 1-2.2 1l-0.7 0.1s-1.4-0.2-1.4-0.2l-0.6 2.3 1.3 0.5 0.6 0.4s1.4 2 1.4 2l-0.7 1.1s-2.3-0.3-2.3-0.3l-0.7-0.3-1.1-0.8-1.7 1.7s0.9 1 0.9 1 0.3 0.7 0.3 0.7l0.2 2.4-1.1 0.6-1.9-1.4-0.5-0.6-0.5-1.2s-2.3 0.6-2.3 0.6l0.2 1.3-0.1 0.8-0.9 2.1h-1.3l-1-2.1-0.1-0.8 0.2-1.3s-2.3-0.6-2.3-0.6l-0.5 1.2-0.4 0.6-1.9 1.4-1.2-0.6 0.3-2.4s0.3-0.7 0.3-0.7l0.8-1-1.7-1.7-1 0.8-0.7 0.3-2.4 0.3-0.6-1.1s1.4-2 1.4-2l0.6-0.4 1.2-0.5-0.6-2.3s-1.3 0.2-1.3 0.2l-0.8-0.1-2.1-1v-1.3s2.1-0.9 2.1-0.9l0.8-0.1s1.3 0.2 1.3 0.2l0.6-2.3-1.2-0.5-0.6-0.5-1.4-1.9 0.6-1.1 2.4 0.2 0.7 0.4 1 0.8 1.7-1.7-0.8-1.1s-0.3-0.7-0.3-0.7l-0.3-2.3 1.2-0.7 1.9 1.4 0.4 0.7 0.5 1.2s2.3-0.6 2.3-0.6"
+            })
+          )
+        )
+      ),
+      external_root_React_commonjs2_react_commonjs_react_amd_react_default.a.createElement(
+        "g",
+        { id: "layer3" },
+        external_root_React_commonjs2_react_commonjs_react_amd_react_default.a.createElement("path", {
+          id: "app1",
+          transform: "matrix(0,0,0,0,0,0)",
+          fill: "#0f0",
+          d: "m77.25 52.49h11.56v-1.774h-11.56v1.774m0 6.246h15.12v-1.786h-15.12v1.786m-6.222 8.919c-0.97 0-1.774-0.7807-1.774-1.786v-22.31c0-0.8753 0.7334-1.762 1.751-1.762h30.29c0.9463 0 1.739 0.828 1.739 1.739v22.34c0 0.9818-0.8162 1.774-1.762 1.774h-7.57s-7.559 8.907-7.559 8.907v-8.907h-15.12m-7.074 15.6c-6.506 0-12.3-5.453-12.3-13.79 0-6.47 4.897-13.12 12.08-13.12 0.9936 0 1.952 0.1301 2.863 0.3785v9.416c0.2011 2.389 1.904 4.093 4.412 4.187h4.826c-0.2602 7.795-6.163 12.93-11.88 12.93m-24.8 27.14c0.556-5.974 1.313-14.11 2.756-18.24 0.6388-1.857 1.597-3.206 3.146-4.329 0.9936-0.7452 4.542-2.721 5.205-3.04 1.147-0.5914 2.33-0.9108 3.336 0 6.033 5.347 14.37 5.193 20.5 0.01183 0.6979-0.7216 1.833-0.5323 2.567-0.2366 1.171 0.4377 4.921 2.661 5.63 3.123 2.07 1.36 3.206 3.182 4.034 6.6 1.053 4.601 1.68 10.49 2.389 16.11h-49.56"
+        })
+      )
+    );
+  };
+
+  return Svg;
+}(external_root_React_commonjs2_react_commonjs_react_amd_react_["Component"]);
+
+/* harmony default export */ var AppResponsive = (AppResponsive_Svg);
+// EXTERNAL MODULE: ./node_modules/prop-types/index.js
+var prop_types = __webpack_require__(2);
+var prop_types_default = /*#__PURE__*/__webpack_require__.n(prop_types);
+
+// CONCATENATED MODULE: ./src/three-gears/ThreeGears.js
+function ThreeGears_classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
+
+function ThreeGears_possibleConstructorReturn(self, call) { if (!self) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return call && (typeof call === "object" || typeof call === "function") ? call : self; }
+
+function ThreeGears_inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function, not " + typeof superClass); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, enumerable: false, writable: true, configurable: true } }); if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass; }
+
+
+
+
+var ThreeGears_ThreeGears = function (_Component) {
+  ThreeGears_inherits(ThreeGears, _Component);
+
+  function ThreeGears(props) {
+    ThreeGears_classCallCheck(this, ThreeGears);
+
+    var _this = ThreeGears_possibleConstructorReturn(this, _Component.call(this, props));
+
+    _this.rotate = function (svgRef, velocity) {
+      var newValue = "rotate(" + svgRef.inc + ", " + svgRef.x + ", " + svgRef.y + ")";
+      svgRef.el.setAttribute("transform", newValue);
+      svgRef.inc += 1 * velocity;
+    };
+
+    _this.buildSvgRef = function (refId) {
+      var el = document.getElementById(refId);
+      var bbox = el.getBBox();
+      return {
+        el: el,
+        x: bbox.x + bbox.width / 2,
+        y: bbox.y + bbox.height / 2,
+        inc: 0
+      };
+    };
+
+    _this.animate = function () {
+      _this.rotate(_this.wheel1, 1);
+      _this.rotate(_this.wheel2, -2);
+      _this.rotate(_this.wheel3, -2);
+      _this.animation = window.requestAnimationFrame(_this.animate);
+    };
+
+    _this.buildSvg = function () {
+      _this.wheel1 = _this.buildSvgRef(_this.props.id + 1);
+      _this.wheel2 = _this.buildSvgRef(_this.props.id + 2);
+      _this.wheel3 = _this.buildSvgRef(_this.props.id + 3);
+    };
+
+    _this.wheel1;
+    _this.inc = 0;
+    return _this;
+  }
+
+  ThreeGears.prototype.componentDidMount = function componentDidMount() {
+    this.buildSvg();
+    this.animate();
+  };
+
+  ThreeGears.prototype.componentWillUnmount = function componentWillUnmount() {
+    window.cancelAnimationFrame(this.animation);
+  };
+
+  ThreeGears.prototype.render = function render() {
+    return external_root_React_commonjs2_react_commonjs_react_amd_react_default.a.createElement(
+      "svg",
+      {
+        id: "svg2",
+        height: "500",
+        width: "500",
+        version: "1.1",
+        viewBox: "0 0 500 500"
+      },
+      external_root_React_commonjs2_react_commonjs_react_amd_react_default.a.createElement("path", {
+        id: this.props.id + 1,
+        d: "M350.7 241.6C350.7 241.6 353.324 241.3887 353.324 241.3887C353.324 241.3887 360.322 242.5347 360.322 242.5347C360.322 242.5347 370.049 246.6047 370.049 246.6047C370.049 246.6047 370.049 253.4227 370.049 253.4227C370.049 253.4227 360.322 257.4927 360.322 257.4927C360.322 257.4927 353.324 258.6387 353.324 258.6387C353.324 258.6387 350.7 258.4274 350.7 258.4274C350.7 258.4274 349.317 268.9274 349.317 268.9274C349.317 268.9274 351.907 269.4025 351.907 269.4025C351.907 269.4025 358.37 272.3205 358.37 272.3205C358.37 272.3205 366.712 278.7695 366.712 278.7695C366.712 278.7695 364.947 285.3545 364.947 285.3545C364.947 285.3545 354.497 286.7685 354.497 286.7685C354.497 286.7685 347.441 286.0645 347.441 286.0645C347.441 286.0645 344.961 285.1811 344.961 285.1811C344.961 285.1811 340.908 294.9671 340.908 294.9671C340.908 294.9671 343.287 296.0961 343.287 296.0961C343.287 296.0961 348.774 300.5881 348.774 300.5881C348.774 300.5881 355.163 308.9761 355.163 308.9761C355.163 308.9761 351.754 314.8801 351.754 314.8801C351.754 314.8801 341.294 313.5411 341.294 313.5411C341.294 313.5411 334.66 311.0351 334.66 311.0351C334.66 311.0351 332.493 309.5401 332.493 309.5401C332.493 309.5401 326.045 317.9431 326.045 317.9431C326.045 317.9431 328.05 319.6491 328.05 319.6491C328.05 319.6491 332.188 325.4081 332.188 325.4081C332.188 325.4081 336.188 335.1641 336.188 335.1641C336.188 335.1641 331.367 339.9851 331.367 339.9851C331.367 339.9851 321.611 335.9851 321.611 335.9851C321.611 335.9851 315.852 331.8471 315.852 331.8471C315.852 331.8471 314.146 329.8421 314.146 329.8421C314.146 329.8421 305.743 336.2901 305.743 336.2901C305.743 336.2901 307.238 338.4571 307.238 338.4571C307.238 338.4571 309.744 345.0911 309.744 345.0911C309.744 345.0911 311.083 355.5511 311.083 355.5511C311.083 355.5511 305.179 358.9601 305.179 358.9601C305.179 358.9601 296.791 352.5711 296.791 352.5711C296.791 352.5711 292.299 347.0841 292.299 347.0841C292.299 347.0841 291.17 344.7051 291.17 344.7051C291.17 344.7051 281.384 348.7581 281.384 348.7581C281.384 348.7581 282.2674 351.2381 282.2674 351.2381C282.2674 351.2381 282.9714 358.2941 282.9714 358.2941C282.9714 358.2941 281.5574 368.7441 281.5574 368.7441C281.5574 368.7441 274.9724 370.5091 274.9724 370.5091C274.9724 370.5091 268.5234 362.1671 268.5234 362.1671C268.5234 362.1671 265.6054 355.7041 265.6054 355.7041C265.6054 355.7041 265.1303 353.1141 265.1303 353.1141C265.1303 353.1141 254.6303 354.4971 254.6303 354.4971C254.6303 354.4971 254.8416 357.1211 254.8416 357.1211C254.8416 357.1211 253.6956 364.1191 253.6956 364.1191C253.6956 364.1191 249.6256 373.8461 249.6256 373.8461C249.6256 373.8461 242.8076 373.8461 242.8076 373.8461C242.8076 373.8461 238.7376 364.1191 238.7376 364.1191C238.7376 364.1191 237.5916 357.1211 237.5916 357.1211C237.5916 357.1211 237.8029 354.4971 237.8029 354.4971C237.8029 354.4971 227.3029 353.1141 227.3029 353.1141C227.3029 353.1141 226.8278 355.7041 226.8278 355.7041C226.8278 355.7041 223.9098 362.1671 223.9098 362.1671C223.9098 362.1671 217.4608 370.5091 217.4608 370.5091C217.4608 370.5091 210.8758 368.7441 210.8758 368.7441C210.8758 368.7441 209.4618 358.2941 209.4618 358.2941C209.4618 358.2941 210.1658 351.2381 210.1658 351.2381C210.1658 351.2381 211.0492 348.7581 211.0492 348.7581C211.0492 348.7581 201.2632 344.7051 201.2632 344.7051C201.2632 344.7051 200.1342 347.0841 200.1342 347.0841C200.1342 347.0841 195.6422 352.5711 195.6422 352.5711C195.6422 352.5711 187.2542 358.9601 187.2542 358.9601C187.2542 358.9601 181.3502 355.5511 181.3502 355.5511C181.3502 355.5511 182.6892 345.0911 182.6892 345.0911C182.6892 345.0911 185.1952 338.4571 185.1952 338.4571C185.1952 338.4571 186.6902 336.2901 186.6902 336.2901C186.6902 336.2901 178.2872 329.8421 178.2872 329.8421C178.2872 329.8421 176.5812 331.8471 176.5812 331.8471C176.5812 331.8471 170.8222 335.9851 170.8222 335.9851C170.8222 335.9851 161.0662 339.9851 161.0662 339.9851C161.0662 339.9851 156.2452 335.1641 156.2452 335.1641C156.2452 335.1641 160.2452 325.4081 160.2452 325.4081C160.2452 325.4081 164.3832 319.6491 164.3832 319.6491C164.3832 319.6491 166.3882 317.9431 166.3882 317.9431C166.3882 317.9431 159.9402 309.5401 159.9402 309.5401C159.9402 309.5401 157.7732 311.0351 157.7732 311.0351C157.7732 311.0351 151.1392 313.5411 151.1392 313.5411C151.1392 313.5411 140.6792 314.8801 140.6792 314.8801C140.6792 314.8801 137.2702 308.9761 137.2702 308.9761C137.2702 308.9761 143.6592 300.5881 143.6592 300.5881C143.6592 300.5881 149.1462 296.0961 149.1462 296.0961C149.1462 296.0961 151.5252 294.9671 151.5252 294.9671C151.5252 294.9671 147.4722 285.1811 147.4722 285.1811C147.4722 285.1811 144.9922 286.0645 144.9922 286.0645C144.9922 286.0645 137.9362 286.7685 137.9362 286.7685C137.9362 286.7685 127.4862 285.3545 127.4862 285.3545C127.4862 285.3545 125.7212 278.7695 125.7212 278.7695C125.7212 278.7695 134.0632 272.3205 134.0632 272.3205C134.0632 272.3205 140.5262 269.4025 140.5262 269.4025C140.5262 269.4025 143.1162 268.9274 143.1162 268.9274C143.1162 268.9274 141.7332 258.4274 141.7332 258.4274C141.7332 258.4274 139.1092 258.6387 139.1092 258.6387C139.1092 258.6387 132.1112 257.4927 132.1112 257.4927C132.1112 257.4927 122.3842 253.4227 122.3842 253.4227C122.3842 253.4227 122.3842 246.6047 122.3842 246.6047C122.3842 246.6047 132.1112 242.5347 132.1112 242.5347C132.1112 242.5347 139.1092 241.3887 139.1092 241.3887C139.1092 241.3887 141.7332 241.6 141.7332 241.6C141.7332 241.6 143.1162 231.1 143.1162 231.1C143.1162 231.1 140.5262 230.6249 140.5262 230.6249C140.5262 230.6249 134.0632 227.7069 134.0632 227.7069C134.0632 227.7069 125.7212 221.2579 125.7212 221.2579C125.7212 221.2579 127.4862 214.6729 127.4862 214.6729C127.4862 214.6729 137.9362 213.2589 137.9362 213.2589C137.9362 213.2589 144.9922 213.9629 144.9922 213.9629C144.9922 213.9629 147.4722 214.8463 147.4722 214.8463C147.4722 214.8463 151.5252 205.0603 151.5252 205.0603C151.5252 205.0603 149.1462 203.9313 149.1462 203.9313C149.1462 203.9313 143.6592 199.4393 143.6592 199.4393C143.6592 199.4393 137.2702 191.0513 137.2702 191.0513C137.2702 191.0513 140.6792 185.1473 140.6792 185.1473C140.6792 185.1473 151.1392 186.4863 151.1392 186.4863C151.1392 186.4863 157.7732 188.9923 157.7732 188.9923C157.7732 188.9923 159.9402 190.4873 159.9402 190.4873C159.9402 190.4873 166.3882 182.0843 166.3882 182.0843C166.3882 182.0843 164.3832 180.3783 164.3832 180.3783C164.3832 180.3783 160.2452 174.6193 160.2452 174.6193C160.2452 174.6193 156.2452 164.8633 156.2452 164.8633C156.2452 164.8633 161.0662 160.0423 161.0662 160.0423C161.0662 160.0423 170.8222 164.0423 170.8222 164.0423C170.8222 164.0423 176.5812 168.1803 176.5812 168.1803C176.5812 168.1803 178.2872 170.1853 178.2872 170.1853C178.2872 170.1853 186.6902 163.7373 186.6902 163.7373C186.6902 163.7373 185.1952 161.5703 185.1952 161.5703C185.1952 161.5703 182.6892 154.9363 182.6892 154.9363C182.6892 154.9363 181.3502 144.4763 181.3502 144.4763C181.3502 144.4763 187.2542 141.0673 187.2542 141.0673C187.2542 141.0673 195.6422 147.4563 195.6422 147.4563C195.6422 147.4563 200.1342 152.9433 200.1342 152.9433C200.1342 152.9433 201.2632 155.3223 201.2632 155.3223C201.2632 155.3223 211.0492 151.2693 211.0492 151.2693C211.0492 151.2693 210.1658 148.7893 210.1658 148.7893C210.1658 148.7893 209.4618 141.7333 209.4618 141.7333C209.4618 141.7333 210.8758 131.2833 210.8758 131.2833C210.8758 131.2833 217.4608 129.5183 217.4608 129.5183C217.4608 129.5183 223.9098 137.8603 223.9098 137.8603C223.9098 137.8603 226.8278 144.3233 226.8278 144.3233C226.8278 144.3233 227.3029 146.9133 227.3029 146.9133C227.3029 146.9133 237.8029 145.5303 237.8029 145.5303C237.8029 145.5303 237.5916 142.9063 237.5916 142.9063C237.5916 142.9063 238.7376 135.9083 238.7376 135.9083C238.7376 135.9083 242.8076 126.1813 242.8076 126.1813C242.8076 126.1813 249.6256 126.1813 249.6256 126.1813C249.6256 126.1813 253.6956 135.9083 253.6956 135.9083C253.6956 135.9083 254.8416 142.9063 254.8416 142.9063C254.8416 142.9063 254.6303 145.5303 254.6303 145.5303C254.6303 145.5303 265.1303 146.9133 265.1303 146.9133C265.1303 146.9133 265.6054 144.3233 265.6054 144.3233C265.6054 144.3233 268.5234 137.8603 268.5234 137.8603C268.5234 137.8603 274.9724 129.5183 274.9724 129.5183C274.9724 129.5183 281.5574 131.2833 281.5574 131.2833C281.5574 131.2833 282.9714 141.7333 282.9714 141.7333C282.9714 141.7333 282.2674 148.7893 282.2674 148.7893C282.2674 148.7893 281.384 151.2693 281.384 151.2693C281.384 151.2693 291.17 155.3223 291.17 155.3223C291.17 155.3223 292.299 152.9433 292.299 152.9433C292.299 152.9433 296.791 147.4563 296.791 147.4563C296.791 147.4563 305.179 141.0673 305.179 141.0673C305.179 141.0673 311.083 144.4763 311.083 144.4763C311.083 144.4763 309.744 154.9363 309.744 154.9363C309.744 154.9363 307.238 161.5703 307.238 161.5703C307.238 161.5703 305.743 163.7373 305.743 163.7373C305.743 163.7373 314.146 170.1853 314.146 170.1853C314.146 170.1853 315.852 168.1803 315.852 168.1803C315.852 168.1803 321.611 164.0423 321.611 164.0423C321.611 164.0423 331.367 160.0423 331.367 160.0423C331.367 160.0423 336.188 164.8633 336.188 164.8633C336.188 164.8633 332.188 174.6193 332.188 174.6193C332.188 174.6193 328.05 180.3783 328.05 180.3783C328.05 180.3783 326.045 182.0843 326.045 182.0843C326.045 182.0843 332.493 190.4873 332.493 190.4873C332.493 190.4873 334.66 188.9923 334.66 188.9923C334.66 188.9923 341.294 186.4863 341.294 186.4863C341.294 186.4863 351.754 185.1473 351.754 185.1473C351.754 185.1473 355.163 191.0513 355.163 191.0513C355.163 191.0513 348.774 199.4393 348.774 199.4393C348.774 199.4393 343.287 203.9313 343.287 203.9313C343.287 203.9313 340.908 205.0603 340.908 205.0603C340.908 205.0603 344.961 214.8463 344.961 214.8463C344.961 214.8463 347.441 213.9629 347.441 213.9629C347.441 213.9629 354.497 213.2589 354.497 213.2589C354.497 213.2589 364.947 214.6729 364.947 214.6729C364.947 214.6729 366.712 221.2579 366.712 221.2579C366.712 221.2579 358.37 227.7069 358.37 227.7069C358.37 227.7069 351.907 230.6249 351.907 230.6249C351.907 230.6249 349.317 231.1 349.317 231.1C349.317 231.1 350.7 241.6 350.7 241.6",
+        fill: "#00f"
+      }),
+      external_root_React_commonjs2_react_commonjs_react_amd_react_default.a.createElement("path", {
+        id: this.props.id + 2,
+        d: "m122.3 243.1s6.017-0.8835 6.017-0.8835l3.529 0.343 9.953 4.505v5.915l-9.953 4.505-3.529 0.343s-6.017-0.8835-6.017-0.8835l-2.854 10.65 5.652 2.243 2.885 2.062s6.367 8.878 6.367 8.878l-2.957 5.122-10.87-1.075-3.228-1.467-4.769-3.773-7.798 7.798 3.773 4.769s1.467 3.228 1.467 3.228l1.074 10.87-5.122 2.957-8.878-6.367-2.062-2.885-2.243-5.652-10.65 2.854 0.8835 6.017-0.343 3.529s-4.505 9.953-4.505 9.953h-5.915s-4.505-9.953-4.505-9.953l-0.343-3.529 0.8835-6.017-10.65-2.854-2.243 5.652-2.062 2.885-8.878 6.367-5.122-2.957 1.075-10.87s1.467-3.228 1.467-3.228l3.773-4.769-7.798-7.798-4.769 3.773-3.228 1.467-10.87 1.075-2.957-5.122s6.367-8.878 6.367-8.878l2.885-2.062 5.652-2.243-2.854-10.65s-6.017 0.8835-6.017 0.8835l-3.529-0.343-9.953-4.505v-5.915l9.953-4.505 3.529-0.343s6.017 0.8835 6.017 0.8835l2.854-10.65-5.652-2.243-2.885-2.062s-6.367-8.878-6.367-8.878l2.957-5.122 10.87 1.075 3.228 1.467 4.769 3.773 7.798-7.798-3.773-4.769s-1.467-3.228-1.467-3.228l-1.075-10.87 5.122-2.957 8.878 6.367 2.062 2.885 2.243 5.652 10.65-2.854-0.8835-6.017 0.343-3.529s4.505-9.953 4.505-9.953h5.915s4.505 9.953 4.505 9.953l0.343 3.529-0.8835 6.017 10.65 2.854 2.243-5.652 2.062-2.885 8.878-6.367 5.122 2.957-1.074 10.87s-1.467 3.228-1.467 3.228l-3.773 4.769 7.798 7.798 4.769-3.773 3.228-1.467 10.87-1.075 2.957 5.122s-6.367 8.878-6.367 8.878l-2.885 2.062-5.652 2.243 2.854 10.65",
+        fill: "#f00"
+      }),
+      external_root_React_commonjs2_react_commonjs_react_amd_react_default.a.createElement("path", {
+        id: this.props.id + 3,
+        d: "m471.9 243.1s6.017-0.8835 6.017-0.8835l3.529 0.343 9.953 4.505v5.915l-9.953 4.505-3.529 0.343s-6.017-0.8835-6.017-0.8835l-2.854 10.65 5.652 2.243 2.885 2.062s6.367 8.878 6.367 8.878l-2.957 5.122-10.87-1.075-3.228-1.467-4.769-3.773-7.798 7.798 3.773 4.769s1.467 3.228 1.467 3.228l1.075 10.87-5.122 2.957-8.878-6.367-2.062-2.885-2.243-5.652-10.65 2.854 0.8835 6.017-0.343 3.529s-4.505 9.953-4.505 9.953h-5.915s-4.505-9.953-4.505-9.953l-0.343-3.529 0.8835-6.017-10.65-2.854-2.243 5.652-2.062 2.885-8.878 6.367-5.122-2.957 1.075-10.87s1.467-3.228 1.467-3.228l3.773-4.769-7.798-7.798-4.769 3.773-3.228 1.467-10.87 1.075-2.957-5.122s6.367-8.878 6.367-8.878l2.885-2.062 5.652-2.243-2.854-10.65s-6.017 0.8835-6.017 0.8835l-3.529-0.343-9.953-4.505v-5.915l9.953-4.505 3.529-0.343s6.017 0.8835 6.017 0.8835l2.854-10.65-5.652-2.243-2.885-2.062s-6.367-8.878-6.367-8.878l2.957-5.122 10.87 1.075 3.228 1.467 4.769 3.773 7.798-7.798-3.773-4.769s-1.467-3.228-1.467-3.228l-1.075-10.87 5.122-2.957 8.878 6.367 2.062 2.885 2.243 5.652 10.65-2.854-0.8835-6.017 0.343-3.529s4.505-9.953 4.505-9.953h5.915s4.505 9.953 4.505 9.953l0.343 3.529-0.8835 6.017 10.65 2.854 2.243-5.652 2.062-2.885 8.878-6.367 5.122 2.957-1.075 10.87s-1.467 3.228-1.467 3.228l-3.773 4.769 7.798 7.798 4.769-3.773 3.228-1.467 10.87-1.075 2.957 5.122s-6.367 8.878-6.367 8.878l-2.885 2.062-5.652 2.243 2.854 10.65",
+        fill: "#0f0"
+      })
+    );
+  };
+
+  return ThreeGears;
+}(external_root_React_commonjs2_react_commonjs_react_amd_react_["Component"]);
+
+ThreeGears_ThreeGears.defaultProps = {
+  id: "my-svg-animation"
+};
+
+ThreeGears_ThreeGears.propTypes = {
+  id: prop_types_default.a.string.isRequired
+};
+
+/* harmony default export */ var three_gears_ThreeGears = (ThreeGears_ThreeGears);
 // CONCATENATED MODULE: ./src/index.js
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "BottleMachine", function() { return src_BottleMachine; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "AppResponsive", function() { return src_AppResponsive; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "ThreeGears", function() { return src_ThreeGears; });
+
+
 
 
 var src_BottleMachine = BottleMachine;
+var src_AppResponsive = AppResponsive;
+var src_ThreeGears = three_gears_ThreeGears;
 
 /***/ })
 /******/ ])["default"];

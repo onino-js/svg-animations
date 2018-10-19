@@ -51,11 +51,13 @@ var FactorySvg = function (_Component) {
   };
 
   FactorySvg.prototype.render = function render() {
+    var size = this.props.size || 200;
+    var width = size + "px";
     return React.createElement(
       "svg",
       {
         id: "svg-container",
-        width: "200px",
+        width: width,
         version: "1.1",
         viewBox: "0 0 7086.6141 4960.6298"
       },

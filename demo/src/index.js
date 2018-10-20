@@ -9,15 +9,32 @@ class Demo extends Component {
     return (
       <div>
         <h1>svg-animations Demo</h1>
-        <div>
-          <BottleMachine size={600} />
-        </div>
-        <div>
+        {/* <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            width: "100%",
+            alignItems: "center",
+            border: "1px solid red",
+          }}
+        >
+          <BottleMachine size={300} />
+        </div> */}
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "center",
+            width: "100%",
+            alignItems: "center",
+          }}
+        >
           <AppResponsive />
         </div>
-        <div>
+        {/* <div>
           <ThreeGears />
-        </div>
+        </div> */}
       </div>
     );
   }

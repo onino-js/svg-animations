@@ -52,7 +52,7 @@ class FactorySvg extends Component {
         id="svg-container"
         width={width}
         version="1.1"
-        viewBox="0 0 7086.6141 4960.6298"
+        viewBox="100 0 5000 4960"
       >
         <defs id="defs4825">
           <mask id="mask5845">

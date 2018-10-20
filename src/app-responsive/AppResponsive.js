@@ -1,6 +1,5 @@
 import React, { Component } from "react";
 import SVG from "svg.js";
-require("svg.pathmorphing.js");
 
 class Svg extends Component {
   constructor(props) {

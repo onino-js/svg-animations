@@ -6,7 +6,6 @@ function _inherits(subClass, superClass) { if (typeof superClass !== "function" 
 
 import React, { Component } from "react";
 import SVG from "svg.js";
-require("svg.pathmorphing.js");
 
 var Svg = function (_Component) {
   _inherits(Svg, _Component);
